@@ -74,6 +74,8 @@ static const char* REQUEST_ID_PROPERTY = "?$rid=";
 
 static const char* MESSAGE_ID_PROPERTY = "mid";
 static const char* CORRELATION_ID_PROPERTY = "cid";
+static const char* CREATION_TIME_UTC_PROPERTY = "ctime";
+static const char* DIAGNOSTIC_ID_PROPERTY = "did";
 
 #define UNSUBSCRIBE_FROM_TOPIC                  0x0000
 #define SUBSCRIBE_GET_REPORTED_STATE_TOPIC      0x0001
@@ -97,6 +99,8 @@ static SYSTEM_PROPERTY_INFO sysPropList[] = {
     { "%24.uid", 7 },
     { "%24.to", 6 },
     { "%24.cid", 7 },
+	{ "%24.ctime", 9},
+	{ "%24.did", 7},
     { "devices/", 8 },
     { "iothub-operation", 16 },
     { "iothub-ack", 10 }
@@ -585,12 +589,43 @@ static STRING_HANDLE addPropertiesTouMqttMessage(IOTHUB_MESSAGE_HANDLE iothub_me
         {
             if (STRING_sprintf(result, "%s%%24.mid=%s", index == 0 ? "" : PROPERTY_SEPARATOR, msg_id) != 0)
             {
-                LogError("Failed setting correlation_id.");
+                LogError("Failed setting msg_id.");
                 STRING_delete(result);
                 result = NULL;
             }
+			index++;
         }
     }
+
+	if (result != NULL)
+	{
+		const char* diag_id = IoTHubMessage_GetDiagnosticId(iothub_message_handle);
+		if (diag_id != NULL)
+		{
+			if (STRING_sprintf(result, "%s%%24.did=%s", index == 0 ? "" : PROPERTY_SEPARATOR, diag_id) != 0)
+			{
+				LogError("Failed setting diag_id");
+				STRING_delete(result);
+				result = NULL;
+			}
+			index++;
+		}
+	}
+
+	if (result != NULL)
+	{
+		const char* creation_time_utc = IoTHubMessage_GetCreationTimeUtc(iothub_message_handle);
+		if (creation_time_utc != NULL)
+		{
+			if (STRING_sprintf(result, "%s%%24.ctime=%s", index == 0 ? "" : PROPERTY_SEPARATOR, creation_time_utc) != 0)
+			{
+				LogError("Failed setting creation_time_utc");
+				STRING_delete(result);
+				result = NULL;
+			}
+			index++;
+		}
+	}
     return result;
 }
 
@@ -793,7 +828,7 @@ static bool isSystemProperty(const char* tokenData)
     return result;
 }
 
-static int extractMqttProperties(IOTHUB_MESSAGE_HANDLE IoTHubMessage, const char* topic_name)
+static int extractMqttProperties(IOTHUB_MESSAGE_HANDLE messageHandle, const char* topic_name)
 {
     int result;
     STRING_HANDLE mqttTopic = STRING_construct(topic_name);
@@ -807,7 +842,7 @@ static int extractMqttProperties(IOTHUB_MESSAGE_HANDLE IoTHubMessage, const char
         STRING_TOKENIZER_HANDLE token = STRING_TOKENIZER_create(mqttTopic);
         if (token != NULL)
         {
-            MAP_HANDLE propertyMap = IoTHubMessage_Properties(IoTHubMessage);
+            MAP_HANDLE propertyMap = IoTHubMessage_Properties(messageHandle);
             if (propertyMap == NULL)
             {
                 LogError("Failure to retrieve IoTHubMessage_properties.");
@@ -864,7 +899,7 @@ static int extractMqttProperties(IOTHUB_MESSAGE_HANDLE IoTHubMessage, const char
                                             {
                                                 if (strcmp((const char*)&propName[nameLen - 3], MESSAGE_ID_PROPERTY) == 0)
                                                 {
-                                                    if (IoTHubMessage_SetMessageId(IoTHubMessage, propValue) != IOTHUB_MESSAGE_OK)
+                                                    if (IoTHubMessage_SetMessageId(messageHandle, propValue) != IOTHUB_MESSAGE_OK)
                                                     {
                                                         LogError("Failed to set IOTHUB_MESSAGE_HANDLE 'messageId' property.");
                                                         result = __FAILURE__;
@@ -873,13 +908,31 @@ static int extractMqttProperties(IOTHUB_MESSAGE_HANDLE IoTHubMessage, const char
 
                                                 if (strcmp((const char*)&propName[nameLen - 3], CORRELATION_ID_PROPERTY) == 0)
                                                 {
-                                                    if (IoTHubMessage_SetCorrelationId(IoTHubMessage, propValue) != IOTHUB_MESSAGE_OK)
+                                                    if (IoTHubMessage_SetCorrelationId(messageHandle, propValue) != IOTHUB_MESSAGE_OK)
                                                     {
                                                         LogError("Failed to set IOTHUB_MESSAGE_HANDLE 'correlationId' property.");
                                                         result = __FAILURE__;
                                                     }
                                                 }
-                                            }
+
+												if (strcmp((const char*)&propName[nameLen - 3], DIAGNOSTIC_ID_PROPERTY) == 0)
+												{
+													if (IoTHubMessage_SetDiagnosticId(messageHandle, propValue) != IOTHUB_MESSAGE_OK)
+													{
+														LogError("Failed to set IOTHUB_MESSAGE_HANDLE 'diagnosticId' property");
+														result = __FAILURE__;
+													}
+												}
+
+												if (strcmp((const char*)&propName[nameLen - 3], CREATION_TIME_UTC_PROPERTY) == 0)
+												{
+													if (IoTHubMessage_SetCreationTimeUtc(messageHandle, propValue) != IOTHUB_MESSAGE_OK)
+													{
+														LogError("Failed to set IOTHUB_MESSAGE_HANDLE 'creationTimeUtc' property");
+														result = __FAILURE__;
+													}
+												}
+											}
                                         }
                                         free(propName);
                                         free(propValue);
